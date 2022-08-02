@@ -1,6 +1,8 @@
 # cronctl
 Project created as showcase for Travelport GDS
 
+Work for current user!! 
+
 How to use:
 
 $ ./cronctl.py --help #Cheat sheet
