@@ -1,7 +1,7 @@
 # cronctl
 Project created as showcase for Travelport GDS
 
-Work for current user!! 
+Work for current user crontab!! 
 
 How to use:
 
