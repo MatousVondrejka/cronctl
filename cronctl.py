@@ -1,11 +1,9 @@
 #!/usr/bin/python3
 import argparse
-from genericpath import exists
 import os
 import re
 import crontab
-import getpass
-
+from crontab import CronSlices
 
 #----------------------------------------------------------------------
 #Argument proccessing
@@ -14,8 +12,8 @@ group = parser.add_mutually_exclusive_group()
 group.add_argument("-a", "--add", action="store_true", help='adding script to crontab, not work with remove, must be use with --type')
 group.add_argument("-r", "--remove", action="store_true", help='delete script from crontab, not work with add')
 group.add_argument("-c", "--check", action="store_true", help='check valid of all crons, run every time')
-parser.add_argument("-t", "--type", choices=['P','T','D','I'],help='Specified type: production/test/devel/internal, must be use with --add')
-parser.add_argument("--files", nargs='+', help='Path to script',required=False)
+parser.add_argument("-t", "--type", choices=['P','T','D','I'],default=None ,help='Specified type: production/test/devel/internal, must be use with --add')
+parser.add_argument("-f", "--files", nargs='+', help='Path to script',required=False)
 args = parser.parse_args()
 
 
@@ -44,7 +42,7 @@ def add_script(file, type):
     # Find lines for cron and right type
     cronlines = ''
     for cronsearch in f:
-        if cronsearch.startswith('#') and re.search('cron', cronsearch) and re.search(type, cronsearch):
+        if cronsearch.startswith('#') and re.search(':cron:', cronsearch) and re.search(type, cronsearch):
             cronlines += cronsearch
     f.close()
 
@@ -52,8 +50,9 @@ def add_script(file, type):
     cronlines = cronlines.replace('\n',':')
     cronlines = cronlines.split(':')
     crontime = []
+    
     for cronsearch in cronlines:
-        if cronsearch.startswith(tuple('0123456789*')):
+        if  CronSlices.is_valid(cronsearch):
             crontime.append(cronsearch)
     
     #Absolute and relative path handle
@@ -63,8 +62,9 @@ def add_script(file, type):
     else:
         path_to_script = os.getcwd() + '/' + file
 
+    environ = os.environ
+    cron = crontab.CronTab(user=environ.get('USER'))
     #Check if job with time exist, if don't, then create it
-    cron = crontab.CronTab(user=getpass.getuser())
     for cront in crontime:
         exist = False
         
@@ -83,31 +83,50 @@ def add_script(file, type):
 #----------------------------------------------------------------------
 
 def delete_script(file):
-    cron = crontab.CronTab(user=getpass.getuser())
-    for cronsearch in cron:
-        cronsearchstring = str(cronsearch)
-        if cronsearchstring.endswith(file):
-            print('Deleting...  ' + cronsearchstring)
-            cron.remove(cronsearch)
+    environ = os.environ
+    cron = crontab.CronTab(user=environ.get('USER'))
+    
+    for c in cron:
+        if re.search(file, str(c)):
+            print('Deleting...  ' + str(c))
+            cron.remove(c)
             cron.write()
+
 
 #----------------------------------------------------------------------
 
 # Check if exiting script are executable and have valid path, otherwise delete
 def check_existing_script():
-    cron = crontab.CronTab(user=getpass.getuser())
+    environ = os.environ
+    cron = crontab.CronTab(user=environ.get('USER'))
     cronstringfield = str(cron).split("\n")
     relatedcols = []
     for croncol in cronstringfield:
-        if not croncol.startswith('#') and croncol != '':
+        if croncol.startswith(tuple('0123456789*')):
             scriptpath = croncol.split(' ')
             relatedcols.append(scriptpath[5])
     # Make output uniq
-    relatedcols = list(dict.fromkeys(relatedcols))
+    relatedcols = set(relatedcols)
+
+    os_path = environ.get('PATH')
+    os_path = os_path.split(':')
+    
     for col in relatedcols:
-        if not exists(col) or not os.access(col, os.X_OK):   
-            print('Not valid...' + col)
+        script_valid = False
+        if col.startswith('/'):
+            if os.path.exists(col) and os.access(col, os.X_OK):   
+                script_valid = True
+        else:
+            for p in os_path:
+                path_for_check = p + '/' + col
+                if os.path.exists(path_for_check) and os.access(path_for_check, os.X_OK):
+                    script_valid = True
+        if not script_valid:
+            print ("Non-valid cron.... " + col)
             delete_script(col)
+
+
+
         
 
 #----------------------------------------------------------------------        
